@@ -40,6 +40,11 @@ const userSchema = mongoose.Schema(
       default: "subscriber",
       // subscriber, author, and admin (suspended)
     },
+    courseStatus: {
+      type: String,
+      required: true,
+      default: "not-status",
+    },
     isVerified: {
       type: Boolean,
       default: false,

@@ -16,13 +16,13 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Register User
 const registerUser = asyncHandler(async (req, res) => {
-  const { photo, name, email, password } = req.body;
+  const { photo, name, email, password, role, courseStatus } = req.body;
 
   // Validation
-  if (!photo, !name || !email || !password) {
-    res.status(400);
-    throw new Error("Please fill in all the required fields.");
-  }
+  // if (!photo, !name || !email || !password) {
+  //   res.status(400);
+  //   throw new Error("Please fill in all the required fields.");
+  // }
 
   if (password.length < 6) {
     res.status(400);
@@ -46,6 +46,8 @@ const registerUser = asyncHandler(async (req, res) => {
     photo,
     name,
     email,
+    role, 
+    courseStatus,
     password,
     userAgent,
   });
@@ -63,7 +65,7 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   if (user) {
-    const { _id, name, email, phone, bio, photo, role, isVerified } = user;
+    const { _id, name, email, role, courseStatus, phone, bio, photo, isVerified } = user;
 
     res.status(201).json({
       _id,
@@ -73,6 +75,7 @@ const registerUser = asyncHandler(async (req, res) => {
       bio,
       photo,
       role,
+      courseStatus,
       isVerified,
       token,
     });
