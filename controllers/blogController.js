@@ -18,7 +18,8 @@ const createBlog = asyncHandler(async (req, res) => {
       description_ar, 
       tags,
       tags_ar,
-      code 
+      code,
+      language,
   } = req.body;
 
   // Log the incoming request body for debugging
@@ -102,6 +103,7 @@ const createBlog = asyncHandler(async (req, res) => {
       tags: JSON.parse(tags),
       tags_ar: JSON.parse(tags_ar),
       code,
+      language,
       image: fileData,
       blogItems: blogItems ? blogItems.map((item, index) => ({
           ...item,
@@ -114,7 +116,7 @@ const createBlog = asyncHandler(async (req, res) => {
 // Get all blogs
 const getBlogs = async (req, res) => {
   try {
-    const blogs = await Blog.find().populate('likedBy');
+    const blogs = await Blog.find().populate('likedBy').sort({ createdAt: -1 });
     res.json(blogs);
   } catch (error) {
     console.error('Error retrieving blogs:', error);
@@ -140,7 +142,7 @@ const getRelatedBlogs = asyncHandler(async (req, res) => {
         }
 
         // Fetch related blogs by category
-        const blogs = await Blog.find({ category }).limit(5); // Fetch related blogs
+        const blogs = await Blog.find({ category }).limit(5).sort({ createdAt: -1 }); // Fetch related blogs
 
         // Filter out blogs with the same name as the found blog
         const filteredBlogs = blogs.filter(blog => blog.name !== foundBlog.name);
@@ -186,76 +188,99 @@ const deleteBlog = asyncHandler(async (req, res) => {
 
 // Update blog
 const updateBlog = asyncHandler(async (req, res) => {
-  const { 
-      name, 
-      name_ar, // Arabic name
-      category, 
-      category_ar, // Arabic category
-      description, 
-      description_ar, // Arabic description
-      tags,
-      tags_ar, // Arabic tags
-      code, 
-      blogItems 
-  } = req.body;
-  const { id } = req.params;
+    const { 
+        name, 
+        name_ar, 
+        category, 
+        category_ar, 
+        description, 
+        description_ar, 
+        tags,
+        tags_ar, 
+        code, 
+        language,
+        blogItems 
+    } = req.body;
+    const { id } = req.params;
 
-  const blog = await Blog.findById(id);
+    const blog = await Blog.findById(id);
 
-  // If blog doesn't exist
-  if (!blog) {
-      return res.status(404).json({ message: "Blog not found" }); // Consistent error response
+    // If blog doesn't exist
+    if (!blog) {
+        return res.status(404).json({ message: "Blog not found" });
+    }
+
+    // Match blog to its user
+    if (blog.user.toString() !== req.user.id) {
+        return res.status(401).json({ message: "User not authorized" });
+    }
+
+  // Handle Image upload
+  let imageFileData = {};
+  if (req.files && req.files.image) {
+    // Save image to Cloudinary
+    let uploadedFile;
+    try {
+      uploadedFile = await cloudinary.uploader.upload(req.files.image[0].path, {
+        folder: "Portfolio React",
+        resource_type: "image",
+      });
+    } catch (error) {
+      res.status(500);
+      throw new Error("Image could not be uploaded");
+    }
+
+    imageFileData = {
+      fileName: req.files.image[0].originalname,
+      filePath: uploadedFile.secure_url,
+      fileType: req.files.image[0].mimetype,
+      fileSize: fileSizeFormatter(req.files.image[0].size, 2),
+    };
   }
 
-  // Match blog to its user
-  if (blog.user.toString() !== req.user.id) {
-      return res.status(401).json({ message: "User not authorized" }); // Consistent error response
-  }
 
-  // Handle image upload
-  let fileData = {};
-  if (req.file) {
-      let uploadedFile;
-      try {
-          uploadedFile = await cloudinary.uploader.upload(req.file.path, {
-              folder: "Portfolio React",
-              resource_type: "image",
-          });
-      } catch (error) {
-          return res.status(500).json({ message: "Image could not be uploaded" }); // Consistent error response
-      }
+    // Prepare update data
+    const updateData = {
+        name, 
+        name_ar, 
+        category, 
+        category_ar, 
+        description, 
+        description_ar, 
+        tags: JSON.parse(tags),
+        tags_ar: JSON.parse(tags_ar), 
+        code,
+        language,
+        image: Object.keys(imageFileData).length === 0 ? blog.image : imageFileData,
+    };
 
-      fileData = {
-          fileName: req.file.originalname,
-          filePath: uploadedFile.secure_url,
-          fileType: req.file.mimetype,
-          fileSize: fileSizeFormatter(req.file.size, 2),
-      };
-  }
+    // Update blogItems if provided
+    if (blogItems) {
+        const parsedBlogItems = JSON.parse(blogItems); // Parse the JSON string sent from the frontend
+        updateData.blogItems = parsedBlogItems.map((blogItem) => ({
+            id: blogItem.id || undefined, // Use existing ID or generate a new one
+            name: blogItem.name || "",
+            name_ar: blogItem.name_ar || "",
+            code: blogItem.code || "", // code
+            language: blogItem.language || "", // language
+            image: blogItem.image || "", // image
+            description: blogItem.description || "", // description
+            description_ar: blogItem.description_ar || "", // description_ar
+        }));
+    }
 
-  // Update blog
-  const updatedBlog = await Blog.findByIdAndUpdate(
-      id, // Directly use id instead of { _id: id }
-      {
-          name, // English name
-          name_ar, // Arabic name
-          category, // English category
-          category_ar, // Arabic category
-          description, // English description
-          description_ar, // Arabic description
-          tags: JSON.parse(tags),
-          tags_ar: JSON.parse(tags_ar),
-          code,
-          image: Object.keys(fileData).length === 0 ? blog.image : fileData, // Use blog.image directly
-          blogItems: blogItems || blog.blogItems,
-      },
-      {
-          new: true,
-          runValidators: true,
-      }
-  );
+    // Update blog
+    const updatedBlog = await Blog.findByIdAndUpdate(id, updateData, {
+        new: true,
+        runValidators: true,
+    });
 
-  res.status(200).json(updatedBlog);
+    // Check if the blog was updated
+    if (!updatedBlog) {
+        return res.status(500).json({ message: "Failed to update blog" });
+    }
+
+    res.status(200).json(updatedBlog);
 });
 
 // Function to like a item post
